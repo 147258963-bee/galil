@@ -1,0 +1,107 @@
+import cv2
+import numpy as np
+import os
+import json
+import hashlib
+from datetime import datetime
+from ultralytics import YOLO
+
+# =========================================================
+# 1. MÓDULO DE SEGURIDAD Y LICENCIAS (AUTOMÁTICO)
+# =========================================================
+def secure_activation():
+    """Crea la estructura de seguridad y registra el hardware."""
+    if not os.path.exists('licenses'):
+        os.makedirs('licenses')
+    
+    serial_hardware = "GACE22-NC-7788" # Serial simulado del Galil
+    license_path = f"licenses/lic_{serial_hardware}.json"
+    
+    if not os.path.exists(license_path):
+        key = hashlib.sha256(serial_hardware.encode()).hexdigest()
+        data = {
+            "device": "IWI Galil ACE 22",
+            "serial": serial_hardware,
+            "key": key,
+            "activated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "AUTHORIZED_BY_AI_SYSTEM"
+        }
+        with open(license_path, "w") as f:
+            json.dump(data, f, indent=4)
+        print(f"✅ Hardware {serial_hardware} registrado con éxito.")
+    else:
+        print(f"🔑 Licencia verificada para hardware: {serial_hardware}")
+
+# =========================================================
+# 2. CONFIGURACIÓN TÁCTICA Y CARGA DE IA
+# =========================================================
+secure_activation()
+print("🛰️ Cargando Red Neuronal Táctica...")
+model = YOLO('yolov8n.pt')  # Se descarga solo la primera vez
+
+AMMO_CAPACITY = 35
+ammo_left = AMMO_CAPACITY
+thermal_mode = False
+
+def apply_thermal(frame):
+    """Simula visión térmica."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.applyColorMap(gray, cv2.COLORMAP_JET)
+
+def draw_hud(frame, results, ammo, mode):
+    h, w, _ = frame.shape
+    cx, cy = w // 2, h // 2
+    color = (255, 255, 0) # Cyan táctico
+    
+    # Retícula central
+    cv2.circle(frame, (cx, cy), 45, color, 2)
+    cv2.line(frame, (cx-15, cy), (cx+15, cy), color, 2)
+    cv2.line(frame, (cx, cy-15), (cx, cy+15), color, 2)
+
+    # Detección de objetivos (IA Real)
+    for r in results:
+        for box in r.boxes:
+            cls = int(box.cls[0])
+            if cls == 0: # Clase 'persona' en COCO
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(frame, "TARGET", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+    # Telemetría
+    mode_str = "THERMAL" if mode else "OPTIC"
+    cv2.putText(frame, f"MODE: {mode_str}", (30, 50), 2, 0.8, color, 2)
+    cv2.putText(frame, f"MAG: {ammo}/{AMMO_CAPACITY}", (30, h-40), 2, 0.8, (0, 255, 255), 2)
+    cv2.putText(frame, "SYSTEM READY", (w-200, 50), 2, 0.6, (0, 255, 0), 1)
+    
+    return frame
+
+# =========================================================
+# 3. BUCLE DE OPERACIÓN EN TIEMPO REAL
+# =========================================================
+cap = cv2.VideoCapture(0)
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret: break
+
+    # Procesar IA
+    results = model(frame, stream=True, verbose=False)
+
+    # Aplicar modo visual
+    if thermal_mode:
+        frame = apply_thermal(frame)
+
+    # Dibujar HUD
+    output = draw_hud(frame, results, ammo_left, thermal_mode)
+    
+    cv2.imshow('GALIL SMART-SIGHT OS', output)
+
+    # Controles
+    key = cv2.waitKey(1)
+    if key & 0xFF == ord('t'): thermal_mode = not thermal_mode
+    elif key & 0xFF == ord('s') and ammo_left > 0: ammo_left -= 1
+    elif key & 0xFF == ord('r'): ammo_left = AMMO_CAPACITY
+    elif key & 0xFF == ord('q'): break
+
+cap.release()
+cv2.destroyAllWindows()
